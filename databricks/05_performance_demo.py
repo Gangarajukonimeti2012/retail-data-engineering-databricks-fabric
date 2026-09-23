@@ -7,8 +7,9 @@
 # MAGIC that matter for a table this shape (millions of rows, a handful of small
 # MAGIC dimensions, mostly filtered by date and grouped by dimension attributes).
 # MAGIC
-# MAGIC **Not executed in this environment** — written to run as-is in a
-# MAGIC Databricks workspace against the tables created by `04_gold_model.py`.
+# MAGIC **Verified**: run end-to-end via the Databricks CLI against a real
+# MAGIC Databricks Free Edition workspace — including discovering that `.cache()`
+# MAGIC isn't available on serverless compute (see step 3 below and the README).
 
 # COMMAND ----------
 

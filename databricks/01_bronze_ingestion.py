@@ -7,8 +7,9 @@
 # MAGIC exact source payload is always recoverable — Silver/Gold can be rebuilt from here
 # MAGIC without re-ingesting from the source systems.
 # MAGIC
-# MAGIC **Not executed in this environment** (no Databricks workspace / local Spark
-# MAGIC available) — written to run as-is in a Databricks workspace with Unity Catalog.
+# MAGIC **Verified**: run end-to-end via the Databricks CLI against a real
+# MAGIC Databricks Free Edition workspace (serverless compute, Unity Catalog).
+# MAGIC See the README's Data Engineering Pipeline section for the actual results.
 
 # COMMAND ----------
 

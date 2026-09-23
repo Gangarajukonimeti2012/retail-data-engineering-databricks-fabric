@@ -7,8 +7,11 @@
 # MAGIC table rather than silently dropped, so nothing disappears without a trace —
 # MAGIC the `03_data_quality.py` notebook reports on exactly these counts.
 # MAGIC
-# MAGIC **Not executed in this environment** — written to run as-is in a Databricks
-# MAGIC workspace against the tables created by `01_bronze_ingestion.py`.
+# MAGIC **Verified**: run end-to-end via the Databricks CLI against a real
+# MAGIC Databricks Free Edition workspace. The cascading-orphan FK check below
+# MAGIC (order_items/payments against the *final* silver_orders) was added after
+# MAGIC the first real run surfaced 198 orphaned payment rows the original
+# MAGIC logic missed — see the README for the full story.
 
 # COMMAND ----------
 

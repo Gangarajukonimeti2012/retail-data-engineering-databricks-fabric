@@ -11,8 +11,9 @@
 # MAGIC `.collect()` of row-level data, just aggregate counts, so this scales the
 # MAGIC same way at 1M rows or 1B rows.
 # MAGIC
-# MAGIC **Not executed in this environment** — written to run as-is in a Databricks
-# MAGIC workspace after `01_bronze_ingestion.py` and `02_silver_transformation.py`.
+# MAGIC **Verified**: run end-to-end via the Databricks CLI against a real
+# MAGIC Databricks Free Edition workspace — every Bronze check that should fail
+# MAGIC does, and every matching Silver check passes. Real results in the README.
 
 # COMMAND ----------
 

@@ -15,8 +15,9 @@
 # MAGIC - `profit` = `net_sales - cost_amount`
 # MAGIC - `profit_margin` = `profit / net_sales` (0 when `net_sales` is 0, to avoid divide-by-zero)
 # MAGIC
-# MAGIC **Not executed in this environment** — written to run as-is in a Databricks
-# MAGIC workspace after `02_silver_transformation.py`.
+# MAGIC **Verified**: run end-to-end via the Databricks CLI against a real
+# MAGIC Databricks Free Edition workspace — produced a real 49,697-row fact_sales.
+# MAGIC Real row counts and revenue/profit figures are in the README.
 
 # COMMAND ----------
 
