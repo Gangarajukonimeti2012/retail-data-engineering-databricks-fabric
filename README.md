@@ -62,12 +62,33 @@ Python 3.13, Faker, NumPy, pandas, PyArrow (data generation) · Databricks, Apac
 
 Six synthetic tables generated programmatically (not hand-built): `customers`, `products`, `stores`, `orders`, `order_items`, `payments`. Two scales:
 
-| Scale | Customers | Products | Stores | Orders | Order Items | Payments |
-|---|--:|--:|--:|--:|--:|--:|
-| `dev` (default, for iteration) | 2,000 | 500 | 20 | 20,000 | ~50,000 | 20,000 |
-| `full` (target) | 50,000 | 5,000 | 200 | 1,000,000 | ~2,500,000 | 1,000,000 |
+| Scale | Customers | Products | Stores | Orders | Order Items | Payments | Total rows | On-disk size |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| `dev` (for iteration) | 2,020 | 500 | 20 | 20,100 | 51,437 | 20,200 | 94,277 | <1 MB |
+| `full` (generated, validated) | 50,500 | 5,000 | 200 | 1,005,000 | 2,579,324 | 1,010,000 | 4,650,024 | 123 MB (Parquet + CSV) |
+
+Both runs above were actually generated and validated (row counts, FK integrity, DQ issue rates all checked) — see [Data Generation Validation](#data-generation-validation). The `full` run lands under the 400–700MB estimate because Parquet compresses the numeric-heavy `orders`/`order_items`/`payments` tables well.
 
 Realistic data-quality issues are injected at fixed, documented rates (duplicates, missing values, invalid foreign keys, negative quantities/amounts, inconsistent capitalization). Exact rates and row counts: [`docs/data_dictionary.md`](docs/data_dictionary.md) and the auto-generated `data/raw/_dq_issues_report.md`.
+
+### Data Generation Validation
+
+Full-scale run checked directly against the source files:
+
+| Check | Result |
+|---|--:|
+| Duplicate customer IDs | 500 (matches 1% target) |
+| Missing customer city | 1,010 (matches 2% target) |
+| Missing product category | 100 (matches 2% target) |
+| Negative product price | 50 (matches 1% target) |
+| Duplicate order IDs | 5,000 (matches 0.5% target) |
+| Orders with invalid `customer_id` FK | 10,050 (matches 1% target) |
+| Order items with negative quantity | 12,896 (matches 0.5% target) |
+| Order items with invalid `product_id` FK | 25,793 (matches 1% target) |
+| Duplicate payment IDs | 10,000 (matches 1% target) |
+| Payments with invalid amount | 10,100 (matches 1% target) |
+| Null `order.total_amount` | 0 (rollup from order items always populates) |
+| Avg items per order | 2.57 (target ~2.5) |
 
 Full field-level schema: [`docs/data_dictionary.md`](docs/data_dictionary.md).
 
