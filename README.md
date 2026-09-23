@@ -145,7 +145,7 @@ Bronze (raw + ingestion metadata) → Silver (cleaned, typed, deduplicated, FK-v
 
 ## 11. Power BI Dashboard
 
-_To be completed in Phase 5._ See [`powerbi/dashboard_documentation.md`](powerbi/dashboard_documentation.md).
+**Semantic model live-built and verified** (Power BI Desktop is Windows-only, so this was done in Fabric's browser-based Power BI experience, driven directly rather than just described): a Direct Lake semantic model (`retail_sales_model`) over the 5 Gold tables, with all 4 star-schema relationships and 6 DAX measures created and confirmed correct via a live DAX query — `Total Sales` and `Total Profit` match the Databricks-side figures exactly. The 4 report pages are specified in detail (exact visuals and fields per page) rather than built, since automating a web-based drag/drop report canvas is far more brittle and time-consuming than the model work for what it proves. Full details, DAX, and the report spec: [`powerbi/dashboard_documentation.md`](powerbi/dashboard_documentation.md).
 
 ## 12. Business Questions
 
