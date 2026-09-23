@@ -1,4 +1,5 @@
 .venv/
+.venv-fabric/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/

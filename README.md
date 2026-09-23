@@ -141,7 +141,7 @@ Bronze (raw + ingestion metadata) → Silver (cleaned, typed, deduplicated, FK-v
 
 ## 10. Fabric Integration
 
-_To be completed in Phase 4._ See [`fabric/fabric_implementation.md`](fabric/fabric_implementation.md).
+**Live-tested**, not just documented: a Microsoft Fabric free trial workspace (`retail-data-engineering`, on a trial capacity, no cost) was created and populated end-to-end via the Fabric CLI (`fab`). The 5 Gold tables were exported from Databricks as Parquet ([`databricks/06_export_gold_for_fabric.py`](databricks/06_export_gold_for_fabric.py)), downloaded, and loaded into a real Fabric Lakehouse (`retail_lakehouse`) as managed Delta tables — verified with matching row counts and schema. Full details, exact commands run, and two real CLI quirks worked around: [`fabric/fabric_implementation.md`](fabric/fabric_implementation.md).
 
 ## 11. Power BI Dashboard
 
@@ -236,7 +236,8 @@ retail-data-engineering-databricks-fabric/
 │   ├── 02_silver_transformation.py
 │   ├── 03_data_quality.py
 │   ├── 04_gold_model.py
-│   └── 05_performance_demo.py
+│   ├── 05_performance_demo.py
+│   └── 06_export_gold_for_fabric.py  # Phase 4 handoff
 ├── sql/                          # Phase 3
 │   ├── business_metrics.sql
 │   └── data_quality.sql
