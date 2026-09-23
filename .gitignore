@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+
+# generated data is reproducible from data_generation/generate_retail_data.py — do not commit
+data/raw/
+data/bronze/
+data/silver/
+data/gold/
+*.parquet
+*.pbix
