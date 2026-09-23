@@ -83,4 +83,27 @@ See the generator's run output at `data/raw/_dq_issues_report.md` (regenerated e
 
 ## Gold Layer Tables
 
-_To be documented in Phase 3 once `04_gold_model.py` defines `fact_sales` and the `dim_*` tables._
+Built by [`databricks/04_gold_model.py`](../databricks/04_gold_model.py). Not yet executed against real data in this environment — see the README's [Data Engineering Pipeline](../README.md#6-data-engineering-pipeline) section.
+
+### fact_sales (grain: one row per order item)
+| Field | Description |
+|---|---|
+| sales_key | Surrogate key (`monotonically_increasing_id()`) |
+| order_id, order_item_id | Natural keys, kept for traceability back to Silver |
+| customer_key, product_key, store_key, date_key | Foreign keys to the dimensions below |
+| quantity | |
+| gross_sales | `quantity * unit_price`, before discount/tax |
+| discount_amount | `gross_sales * discount_percentage / 100` |
+| net_sales | `gross_sales - discount_amount` — revenue recognized, **excludes tax** |
+| tax_amount | `net_sales * tax_percentage / 100`, tracked separately since it isn't revenue |
+| cost_amount | `quantity * unit_cost` |
+| profit | `net_sales - cost_amount` |
+| profit_margin | `profit / net_sales` (0 when `net_sales` is 0) |
+
+Partitioned by `year`/`month` (derived from `date_key`) for partition pruning on date-range queries.
+
+### dim_customer / dim_product / dim_store
+Surrogate key (`customer_key` / `product_key` / `store_key`, via `row_number()`) plus the descriptive attributes from the corresponding `silver_*` table.
+
+### dim_date
+Generated calendar dimension spanning the min/max `order_date` in `silver_orders`: `date_key` (int, `yyyyMMdd`), `full_date`, `year`, `quarter`, `month`, `month_name`, `day`, `day_of_week`, `is_weekend`. Generated rather than derived only from dates that have orders, so Power BI gets a continuous date axis for time intelligence.

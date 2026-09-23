@@ -94,19 +94,27 @@ Full field-level schema: [`docs/data_dictionary.md`](docs/data_dictionary.md).
 
 ## 6. Data Engineering Pipeline
 
-_To be completed in Phase 3._ Will describe the Bronze → Silver → Gold notebooks in [`databricks/`](databricks/).
+Five Databricks notebooks in [`databricks/`](databricks/), run in order against Unity Catalog tables (`retail_project.main` by default, overridable via widgets):
+
+1. [`01_bronze_ingestion.py`](databricks/01_bronze_ingestion.py) — loads the six raw files (CSV for customers/products/stores, Parquet for orders/order_items/payments) and appends them to `bronze_*` Delta tables with `ingestion_timestamp`, `source_file`, `batch_id`.
+2. [`02_silver_transformation.py`](databricks/02_silver_transformation.py) — dedupes, standardizes, and validates each table, writing clean rows to `silver_*` and quarantining rows that fail validation (bad FK, negative quantity, invalid price/amount) to `<table>_rejected` rather than silently dropping them.
+3. [`03_data_quality.py`](databricks/03_data_quality.py) — runs the same checks against both `bronze_*` (expected to fail) and `silver_*` (expected to pass), proving the Silver transformations actually resolved the issues.
+4. [`04_gold_model.py`](databricks/04_gold_model.py) — builds the star schema.
+5. [`05_performance_demo.py`](databricks/05_performance_demo.py) — partition pruning, broadcast joins, caching, and Delta `OPTIMIZE ZORDER` against `fact_sales`.
+
+**Honesty note:** these were written directly against PySpark/Delta APIs and syntax-checked (`python -m py_compile`), but this environment has no Databricks workspace and no local Java/Spark runtime, so they have **not been executed**. Per your call, this session prioritized writing correct, idiomatic notebooks over installing a local Spark runtime just to test them. Run them in an actual Databricks workspace to verify end-to-end — see [How to Run](#15-how-to-run).
 
 ## 7. Medallion Architecture
 
-Bronze (raw + ingestion metadata) → Silver (cleaned, typed, deduplicated, FK-validated) → Gold (star schema). Design rationale: [`architecture/architecture.md`](architecture/architecture.md).
+Bronze (raw + ingestion metadata) → Silver (cleaned, typed, deduplicated, FK-validated, invalid rows quarantined) → Gold (star schema). Design rationale: [`architecture/architecture.md`](architecture/architecture.md).
 
 ## 8. Data Quality
 
-_To be completed in Phase 3._ Will summarize the checks run in `databricks/03_data_quality.py` and link the PASS/FAIL results.
+[`databricks/03_data_quality.py`](databricks/03_data_quality.py) checks nulls, duplicates, negative quantities, invalid prices/payment amounts, referential integrity, invalid dates, and invalid status values — against both Bronze and Silver, writing a `layer | table | check | total_records | failed_records | status` summary to the `data_quality_results` Delta table. A SQL-only version of the same checks (for a SQL warehouse, no notebook needed) is in [`sql/data_quality.sql`](sql/data_quality.sql).
 
 ## 9. Star Schema
 
-_To be completed in Phase 3._ `fact_sales` at order-item grain + `dim_customer`, `dim_product`, `dim_store`, `dim_date`.
+`fact_sales` at order-item grain, joined to `dim_customer`, `dim_product`, `dim_store`, and a generated `dim_date` calendar dimension — built in [`databricks/04_gold_model.py`](databricks/04_gold_model.py). Metric definitions (gross/net sales, profit, margin) are documented at the top of that notebook and in [`docs/data_dictionary.md`](docs/data_dictionary.md#gold-layer-tables). `fact_sales` is partitioned by `year`/`month` for partition pruning on date-range queries.
 
 ## 10. Fabric Integration
 
@@ -124,15 +132,15 @@ _To be completed in Phase 5._ See [`powerbi/dashboard_documentation.md`](powerbi
 **Customers:** revenue by segment · repeat-customer % · average customer value
 **Operations:** cancellation rate · return rate · payment methods with highest failure rate
 
-Answered via `sql/business_metrics.sql` (Phase 3) and the Power BI dashboard (Phase 5).
+Answered via [`sql/business_metrics.sql`](sql/business_metrics.sql) (one query per question, against the Gold star schema) and the Power BI dashboard (Phase 5). Like the notebooks, these queries are written against the Gold schema defined in `04_gold_model.py` but not executed here — no live warehouse to run them against.
 
 ## 13. Key Insights
 
-_To be completed after Gold layer + dashboard are built, so insights reflect the actual generated data rather than assumptions._
+_To be completed after the Gold layer is actually run against real data, so insights reflect what the queries return rather than assumptions._
 
 ## 14. Performance Considerations
 
-_To be completed in Phase 3._ See `databricks/05_performance_demo.py` for the specific Spark techniques used and why.
+[`databricks/05_performance_demo.py`](databricks/05_performance_demo.py) demonstrates, with rationale for each: partition pruning (via `fact_sales`'s `year`/`month` partitioning), broadcast joins for the small dimension tables against the large fact table, caching a DataFrame that's reused for multiple aggregations (and unpersisting it after), keeping aggregations distributed instead of `.collect()`/`.toPandas()` on raw rows, Spark SQL vs. DataFrame API as a readability choice (same execution plan either way), and Delta `OPTIMIZE ... ZORDER BY` to speed up selective filters beyond what partitioning alone covers.
 
 ## 15. How to Run
 
@@ -154,7 +162,12 @@ Output lands in `data/raw/` (gitignored — regenerate rather than commit): `cus
 
 ### Run the Databricks pipeline
 
-_To be completed in Phase 3._
+_Not yet executed in this session — no Databricks workspace available here. Steps to run it yourself:_
+
+1. Upload `data/raw/*` to a Unity Catalog volume (default expected path: `/Volumes/retail_project/landing/raw`).
+2. Import the five files in [`databricks/`](databricks/) into a Databricks workspace (File → Import; they're in the standard exported-notebook format) as a Workflow, or run them individually in order.
+3. Run `01_bronze_ingestion.py` → `02_silver_transformation.py` → `03_data_quality.py` → `04_gold_model.py` → `05_performance_demo.py`. All accept `catalog`/`schema` widgets (default `retail_project.main`).
+4. Optionally run [`sql/business_metrics.sql`](sql/business_metrics.sql) and [`sql/data_quality.sql`](sql/data_quality.sql) directly in a Databricks SQL editor against the resulting tables.
 
 ## 16. Future Improvements
 
