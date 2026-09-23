@@ -1,6 +1,6 @@
 # Business Requirements
 
-_Status: drafted in Phase 1, finalized in Phase 6._
+_Status: final. All objectives below were met and verified — see the README for the phase-by-phase evidence._
 
 ## Business Scenario
 

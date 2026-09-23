@@ -2,7 +2,7 @@
 
 An end-to-end portfolio project: synthetic retail data → Databricks (PySpark + Delta Lake, Medallion Architecture) → Microsoft Fabric Lakehouse → Power BI dashboard.
 
-> **Status:** Phases 1–3 complete — scaffolding, data generator (validated at both dev and full scale), and the Databricks Bronze/Silver/Gold/data-quality/performance pipeline, **actually deployed and run end-to-end against a real Databricks Free Edition workspace** via the CLI (not just written and assumed to work — three real bugs were found and fixed along the way, documented in [Data Engineering Pipeline](#6-data-engineering-pipeline)). Phases 4–6 (Fabric, Power BI, final docs) are in progress — every claim in this README is marked as built-and-tested or documented-approach so nothing here overstates what was actually run.
+> **Status:** All 6 phases complete. Scaffolding, the data generator, the Databricks Bronze/Silver/Gold/data-quality/performance pipeline, the Fabric Lakehouse handoff, and the Power BI semantic model were all **actually deployed and run against real (free-tier) Databricks and Fabric accounts** via their CLIs and browser UI — not just written and assumed to work. Four real bugs were found and fixed in the process (three in Databricks, one schema gap in the semantic model), documented where they happened rather than smoothed over. The one deliberate exception: the Power BI report *pages* are specified in detail rather than built, since Power BI Desktop is Windows-only and automating a web-based report canvas wasn't worth the brittleness for what it would prove — see [Power BI Dashboard](#11-power-bi-dashboard).
 
 ## 1. Project Overview
 
@@ -164,6 +164,7 @@ From the dev-scale run's real `fact_sales` (49,697 rows, synthetic data — figu
 - **Total net revenue: ~$1.487B, total profit: ~$299M, overall margin: 20.1%.**
 - **Revenue by category** is fairly even by design (categories are assigned uniformly at random in the generator): Clothing ($261M) leads, followed by Beauty ($253M), Grocery ($250M), Sports ($231M), Home ($228M), Electronics ($224M), plus ~$40M attributed to `Unknown` — the ~2% of products with an intentionally-injected missing category, still sellable and still contributing revenue, exactly as the Silver design intended (see [Data Engineering Pipeline](#6-data-engineering-pipeline)).
 - The `Unknown`-category revenue is itself a useful data-quality signal a real analyst would flag: ~2.7% of total revenue ($40.48M of $1.487B) is unattributed because the source category was missing, not because Silver dropped those rows.
+- These figures were independently re-derived a second time from the Power BI semantic model's own DAX measures (`Total Sales`, `Total Profit`) after the Fabric handoff, and matched the Databricks-side numbers exactly — real end-to-end consistency, not just two separate claims.
 
 ## 14. Performance Considerations
 
@@ -218,7 +219,12 @@ Optionally run [`sql/business_metrics.sql`](sql/business_metrics.sql) and [`sql/
 
 ## 16. Future Improvements
 
-If this became a production pipeline: orchestration (e.g. Databricks Workflows or Airflow) instead of manually run notebooks, incremental/CDC ingestion instead of full batch regeneration, automated data-quality alerting instead of a summary table, CI for the notebooks, and a live Databricks-to-Fabric connection instead of a file-based handoff.
+If this became a production pipeline: orchestration (e.g. Databricks Workflows or Airflow) instead of manually run notebooks, incremental/CDC ingestion instead of full batch regeneration, automated data-quality alerting instead of a summary table, CI for the notebooks, and a live Fabric Lakehouse shortcut to Databricks storage instead of the file-based export/import handoff (only needed here because the two platforms are on separate free-tier accounts with no shared network access).
+
+Two concrete, scoped gaps found while building this, left as documented next steps rather than fixed under time pressure:
+- `order_status`/`order_channel` aren't in the Gold `fact_sales` table, so `Return Rate`, `Cancellation Rate`, and `Revenue by Channel` can't be computed from the current semantic model — see [`powerbi/dashboard_documentation.md`](powerbi/dashboard_documentation.md#measures-specified-but-not-built-real-gap-not-an-oversight).
+- `dim_date` isn't yet marked as the semantic model's official Date Table, which DAX time-intelligence functions (`YoY`, `MoM`) require.
+- The Power BI report pages are specified but not built (see [Power BI Dashboard](#11-power-bi-dashboard)) — building them is ~15-20 minutes of manual work in the Fabric portal following the spec.
 
 ## Repository Structure
 
