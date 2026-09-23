@@ -15,8 +15,8 @@
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
-dbutils.widgets.text("catalog", "retail_project", "Catalog")
-dbutils.widgets.text("schema", "main", "Schema")
+dbutils.widgets.text("catalog", "workspace", "Catalog")
+dbutils.widgets.text("schema", "retail_project", "Schema")
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 spark.sql(f"USE {CATALOG}.{SCHEMA}")
@@ -39,7 +39,7 @@ def write_silver(df, table_name: str):
 
 
 def write_rejected(df, table_name: str):
-    if df.rdd.isEmpty():
+    if df.isEmpty():  # DataFrame-native check — .rdd is off-limits on serverless compute
         return
     df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(table_name)
     print(f"{table_name}: {df.count():,} rows quarantined")
@@ -185,21 +185,32 @@ write_rejected(orders_invalid_fk, "orders_rejected")
 # MAGIC ## silver_order_items
 # MAGIC
 # MAGIC Dedupe on `order_item_id`, quarantine negative quantities (can't be a real
-# MAGIC sale) and rows whose `product_id` doesn't exist in `silver_products` — both
-# MAGIC issues were deliberately injected upstream to be caught right here.
+# MAGIC sale), rows whose `product_id` doesn't exist in `silver_products`, **and**
+# MAGIC rows whose `order_id` doesn't exist in `silver_orders`. That last check
+# MAGIC isn't just defensive: `silver_orders` above already dropped ~1% of orders
+# MAGIC for a bad `customer_id`, so any order item pointing at one of those now-
+# MAGIC missing orders is an orphan even though its own `order_id` looked fine
+# MAGIC before that upstream drop — caught here by validating against the *final*
+# MAGIC `silver_orders`, not the pre-cleaning bronze table.
 
 # COMMAND ----------
 
 deduped_items = dedupe_latest(spark.table("bronze_order_items"), "order_item_id")
 valid_product_ids = silver_products.select("product_id")
+valid_order_ids = silver_orders.select("order_id")
 
 items_valid_qty = deduped_items.filter(F.col("quantity") > 0)
 items_invalid_qty = deduped_items.filter(F.col("quantity") <= 0).withColumn(
     "rejected_reason", F.lit("negative_quantity")
 )
 
-items_valid_fk = items_valid_qty.join(valid_product_ids, "product_id", "left_semi")
-items_invalid_fk = items_valid_qty.join(valid_product_ids, "product_id", "left_anti").withColumn(
+items_valid_order_fk = items_valid_qty.join(valid_order_ids, "order_id", "left_semi")
+items_invalid_order_fk = items_valid_qty.join(valid_order_ids, "order_id", "left_anti").withColumn(
+    "rejected_reason", F.lit("invalid_order_fk")
+)
+
+items_valid_fk = items_valid_order_fk.join(valid_product_ids, "product_id", "left_semi")
+items_invalid_product_fk = items_valid_order_fk.join(valid_product_ids, "product_id", "left_anti").withColumn(
     "rejected_reason", F.lit("invalid_product_fk")
 )
 
@@ -209,15 +220,22 @@ silver_order_items = items_valid_fk.select(
 )
 
 write_silver(silver_order_items, "silver_order_items")
-write_rejected(items_invalid_qty.unionByName(items_invalid_fk, allowMissingColumns=True), "order_items_rejected")
+write_rejected(
+    items_invalid_qty
+    .unionByName(items_invalid_order_fk, allowMissingColumns=True)
+    .unionByName(items_invalid_product_fk, allowMissingColumns=True),
+    "order_items_rejected",
+)
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## silver_payments
 # MAGIC
-# MAGIC Dedupe on `payment_id`, quarantine non-positive `payment_amount`, and fill a
-# MAGIC missing `transaction_reference` with a placeholder rather than dropping the
+# MAGIC Dedupe on `payment_id`, quarantine non-positive `payment_amount` and rows
+# MAGIC whose `order_id` no longer exists in `silver_orders` (same cascading-orphan
+# MAGIC case as `silver_order_items` above), and fill a missing
+# MAGIC `transaction_reference` with a placeholder rather than dropping the
 # MAGIC payment — the reference is metadata, not something that invalidates the
 # MAGIC transaction itself.
 
@@ -230,8 +248,13 @@ payments_invalid_amount = deduped_payments.filter(F.col("payment_amount") <= 0).
     "rejected_reason", F.lit("invalid_payment_amount")
 )
 
+payments_valid_order_fk = payments_valid_amount.join(valid_order_ids, "order_id", "left_semi")
+payments_invalid_order_fk = payments_valid_amount.join(valid_order_ids, "order_id", "left_anti").withColumn(
+    "rejected_reason", F.lit("invalid_order_fk")
+)
+
 silver_payments = (
-    payments_valid_amount
+    payments_valid_order_fk
     .withColumn("payment_date", F.to_date("payment_date"))
     .withColumn(
         "transaction_reference",
@@ -251,4 +274,7 @@ silver_payments = (
 )
 
 write_silver(silver_payments, "silver_payments")
-write_rejected(payments_invalid_amount, "payments_rejected")
+write_rejected(
+    payments_invalid_amount.unionByName(payments_invalid_order_fk, allowMissingColumns=True),
+    "payments_rejected",
+)

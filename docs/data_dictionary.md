@@ -83,7 +83,7 @@ See the generator's run output at `data/raw/_dq_issues_report.md` (regenerated e
 
 ## Gold Layer Tables
 
-Built by [`databricks/04_gold_model.py`](../databricks/04_gold_model.py). Not yet executed against real data in this environment — see the README's [Data Engineering Pipeline](../README.md#6-data-engineering-pipeline) section.
+Built by [`databricks/04_gold_model.py`](../databricks/04_gold_model.py) and actually run against a real Databricks Free Edition workspace — see the README's [Data Engineering Pipeline](../README.md#6-data-engineering-pipeline) and [Star Schema](../README.md#9-star-schema) sections for verified row counts.
 
 ### fact_sales (grain: one row per order item)
 | Field | Description |

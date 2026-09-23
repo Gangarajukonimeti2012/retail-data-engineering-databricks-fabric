@@ -196,7 +196,11 @@ def generate_orders(
         rng.integers(order_start.value, order_end.value, size=n), unit="ns"
     )
     seconds_of_day = rng.integers(0, 86_400, size=n)
-    order_timestamps = order_dates.normalize() + pd.to_timedelta(seconds_of_day, unit="s")
+    # Microsecond precision, not the pandas/pyarrow-default nanosecond: Spark's
+    # Parquet reader rejects TIMESTAMP(NANOS) columns outright.
+    order_timestamps = (order_dates.normalize() + pd.to_timedelta(seconds_of_day, unit="s")).astype(
+        "datetime64[us]"
+    )
 
     df = pd.DataFrame(
         {

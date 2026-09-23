@@ -16,9 +16,9 @@ from datetime import datetime
 
 from pyspark.sql import functions as F
 
-dbutils.widgets.text("raw_path", "/Volumes/retail_project/landing/raw", "Raw files base path")
-dbutils.widgets.text("catalog", "retail_project", "Catalog")
-dbutils.widgets.text("schema", "main", "Schema")
+dbutils.widgets.text("raw_path", "/Volumes/workspace/retail_project/raw_landing", "Raw files base path")
+dbutils.widgets.text("catalog", "workspace", "Catalog")
+dbutils.widgets.text("schema", "retail_project", "Schema")
 dbutils.widgets.text("batch_id", "", "Batch ID (blank = auto-generate)")
 
 RAW_PATH = dbutils.widgets.get("raw_path")

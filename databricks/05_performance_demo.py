@@ -14,8 +14,8 @@
 
 from pyspark.sql import functions as F
 
-dbutils.widgets.text("catalog", "retail_project", "Catalog")
-dbutils.widgets.text("schema", "main", "Schema")
+dbutils.widgets.text("catalog", "workspace", "Catalog")
+dbutils.widgets.text("schema", "retail_project", "Schema")
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 spark.sql(f"USE {CATALOG}.{SCHEMA}")
@@ -65,27 +65,29 @@ display(revenue_by_category)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 3. Cache a DataFrame that's reused multiple times
+# MAGIC ## 3. Reusing a filtered DataFrame across multiple aggregations
 # MAGIC
-# MAGIC `current_year_sales` (from step 1) is about to be aggregated three
-# MAGIC different ways below. Without caching, Spark would re-read and
-# MAGIC re-filter the source partitions for each aggregation. `.cache()` keeps
-# MAGIC the already-filtered result in memory across executors after the first
-# MAGIC action, and `.unpersist()` afterwards frees that memory once it's no
-# MAGIC longer needed — caching something used only once is pure overhead, so
-# MAGIC it's paired with the aggregations that actually reuse it.
+# MAGIC `current_year_sales` (from step 1) is aggregated three different ways
+# MAGIC below. On a classic cluster this is exactly where you'd call `.cache()`
+# MAGIC before the first action and `.unpersist()` after the last one, so Spark
+# MAGIC filters the source partitions once instead of three times.
+# MAGIC
+# MAGIC **Tested against this workspace's actual serverless compute, not assumed:**
+# MAGIC `.cache()` fails there with `PERSIST TABLE is not supported on serverless
+# MAGIC compute` — serverless is stateless, ephemeral, multi-tenant compute, so it
+# MAGIC doesn't expose executor-memory persistence to user code. Its disk cache
+# MAGIC (automatic, keyed on the underlying Delta files) covers the same repeated-read
+# MAGIC case without an explicit call. On a classic (non-serverless) cluster, add
+# MAGIC `current_year_sales.cache()` before the aggregations below and
+# MAGIC `.unpersist()` after.
 
 # COMMAND ----------
-
-current_year_sales.cache()
 
 total_revenue = current_year_sales.agg(F.sum("net_sales")).collect()[0][0]
 total_orders = current_year_sales.select("order_id").distinct().count()
 total_profit = current_year_sales.agg(F.sum("profit")).collect()[0][0]
 
 print(f"Jan 2026 — revenue: {total_revenue:,.2f}, orders: {total_orders:,}, profit: {total_profit:,.2f}")
-
-current_year_sales.unpersist()
 
 # COMMAND ----------
 

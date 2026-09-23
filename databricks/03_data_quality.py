@@ -18,8 +18,8 @@
 
 from pyspark.sql import functions as F
 
-dbutils.widgets.text("catalog", "retail_project", "Catalog")
-dbutils.widgets.text("schema", "main", "Schema")
+dbutils.widgets.text("catalog", "workspace", "Catalog")
+dbutils.widgets.text("schema", "retail_project", "Schema")
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 spark.sql(f"USE {CATALOG}.{SCHEMA}")

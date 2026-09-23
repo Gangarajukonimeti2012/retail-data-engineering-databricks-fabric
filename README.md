@@ -2,7 +2,7 @@
 
 An end-to-end portfolio project: synthetic retail data → Databricks (PySpark + Delta Lake, Medallion Architecture) → Microsoft Fabric Lakehouse → Power BI dashboard.
 
-> **Status:** Phase 1 complete (scaffolding + synthetic data generator, validated). Phases 2–6 (scale-up, Bronze/Silver/Gold, data quality, Fabric, Power BI, final docs) are in progress — this README is updated as each phase lands, and every claim below is marked as built-and-tested or documented-approach so nothing here overstates what was actually run.
+> **Status:** Phases 1–3 complete — scaffolding, data generator (validated at both dev and full scale), and the Databricks Bronze/Silver/Gold/data-quality/performance pipeline, **actually deployed and run end-to-end against a real Databricks Free Edition workspace** via the CLI (not just written and assumed to work — three real bugs were found and fixed along the way, documented in [Data Engineering Pipeline](#6-data-engineering-pipeline)). Phases 4–6 (Fabric, Power BI, final docs) are in progress — every claim in this README is marked as built-and-tested or documented-approach so nothing here overstates what was actually run.
 
 ## 1. Project Overview
 
@@ -94,27 +94,50 @@ Full field-level schema: [`docs/data_dictionary.md`](docs/data_dictionary.md).
 
 ## 6. Data Engineering Pipeline
 
-Five Databricks notebooks in [`databricks/`](databricks/), run in order against Unity Catalog tables (`retail_project.main` by default, overridable via widgets):
+Five Databricks notebooks in [`databricks/`](databricks/), chained as a Databricks Job and **actually run end-to-end** against a real Databricks Free Edition workspace (`workspace.retail_project` catalog/schema, serverless compute) — deployed and executed entirely via the Databricks CLI from this session, not just written and assumed to work:
 
-1. [`01_bronze_ingestion.py`](databricks/01_bronze_ingestion.py) — loads the six raw files (CSV for customers/products/stores, Parquet for orders/order_items/payments) and appends them to `bronze_*` Delta tables with `ingestion_timestamp`, `source_file`, `batch_id`.
-2. [`02_silver_transformation.py`](databricks/02_silver_transformation.py) — dedupes, standardizes, and validates each table, writing clean rows to `silver_*` and quarantining rows that fail validation (bad FK, negative quantity, invalid price/amount) to `<table>_rejected` rather than silently dropping them.
-3. [`03_data_quality.py`](databricks/03_data_quality.py) — runs the same checks against both `bronze_*` (expected to fail) and `silver_*` (expected to pass), proving the Silver transformations actually resolved the issues.
+1. [`01_bronze_ingestion.py`](databricks/01_bronze_ingestion.py) — loads the six raw files (CSV for customers/products/stores, Parquet for orders/order_items/payments) from a Unity Catalog volume and appends them to `bronze_*` Delta tables with `ingestion_timestamp`, `source_file`, `batch_id`.
+2. [`02_silver_transformation.py`](databricks/02_silver_transformation.py) — dedupes, standardizes, and validates each table, writing clean rows to `silver_*` and quarantining rows that fail validation (bad FK, negative quantity, invalid price/amount) to `<table>_rejected` rather than silently dropping them. Includes a cascading-FK check: rows in `order_items`/`payments` that point at an order dropped by the `orders` FK check are also quarantined, not left as silent orphans.
+3. [`03_data_quality.py`](databricks/03_data_quality.py) — runs the same checks against both `bronze_*` (fails, as expected) and `silver_*` (passes, confirming Silver actually fixed the issues).
 4. [`04_gold_model.py`](databricks/04_gold_model.py) — builds the star schema.
-5. [`05_performance_demo.py`](databricks/05_performance_demo.py) — partition pruning, broadcast joins, caching, and Delta `OPTIMIZE ZORDER` against `fact_sales`.
+5. [`05_performance_demo.py`](databricks/05_performance_demo.py) — partition pruning, broadcast joins, and Delta `OPTIMIZE ZORDER` against `fact_sales`.
 
-**Honesty note:** these were written directly against PySpark/Delta APIs and syntax-checked (`python -m py_compile`), but this environment has no Databricks workspace and no local Java/Spark runtime, so they have **not been executed**. Per your call, this session prioritized writing correct, idiomatic notebooks over installing a local Spark runtime just to test them. Run them in an actual Databricks workspace to verify end-to-end — see [How to Run](#15-how-to-run).
+**Real run, dev-scale data** (94K raw rows in, 49,697 rows in `fact_sales` after cleaning/dedup): all 5 tasks succeeded. Three real bugs were found and fixed in the process, not just assumed away:
+- pandas/pyarrow wrote `order_timestamp` as `TIMESTAMP(NANOS)`, which Spark's Parquet reader rejects outright — fixed by writing microsecond precision in the generator.
+- `df.rdd.isEmpty()` in the quarantine-writer used raw RDD API, which Databricks serverless compute blocks (`RDD_NOT_SUPPORTED`) — switched to the DataFrame-native `df.isEmpty()`.
+- `.cache()`/`.unpersist()` in the performance notebook hit `PERSIST TABLE is not supported on serverless compute` — serverless doesn't expose executor-memory persistence to user code (its automatic disk cache covers the same case); the notebook now documents this instead of pretending caching ran, with the classic-cluster equivalent shown as a comment.
+
+The full-scale dataset (1M orders) was validated at the pandas/Parquet level in Phase 2 but not run through this Databricks job (Free Edition serverless compute is limited/cost-bound) — re-pointing the same job at the full-scale files in the volume would run it the same way.
 
 ## 7. Medallion Architecture
 
-Bronze (raw + ingestion metadata) → Silver (cleaned, typed, deduplicated, FK-validated, invalid rows quarantined) → Gold (star schema). Design rationale: [`architecture/architecture.md`](architecture/architecture.md).
+Bronze (raw + ingestion metadata) → Silver (cleaned, typed, deduplicated, FK-validated, invalid rows quarantined, including cascading FK orphans) → Gold (star schema). Design rationale: [`architecture/architecture.md`](architecture/architecture.md).
 
 ## 8. Data Quality
 
 [`databricks/03_data_quality.py`](databricks/03_data_quality.py) checks nulls, duplicates, negative quantities, invalid prices/payment amounts, referential integrity, invalid dates, and invalid status values — against both Bronze and Silver, writing a `layer | table | check | total_records | failed_records | status` summary to the `data_quality_results` Delta table. A SQL-only version of the same checks (for a SQL warehouse, no notebook needed) is in [`sql/data_quality.sql`](sql/data_quality.sql).
 
+**Actual results from the real run** — every Bronze check that should fail, fails, and every matching Silver check passes:
+
+| Table | Check | Bronze (failed/total) | Silver (failed/total) |
+|---|---|--:|--:|
+| customers | Duplicate customer_id | 20 / 2,020 | 0 / 2,000 |
+| customers | Null city | 40 / 2,020 | 0 / 2,000 |
+| products | Null category | 10 / 500 | 0 / 495 |
+| products | Invalid selling_price | 5 / 500 | 0 / 495 |
+| orders | Duplicate order_id | 100 / 20,100 | 0 / 19,801 |
+| orders | Invalid customer_id FK | 201 / 20,100 | 0 / 19,801 |
+| order_items | Negative quantity | 257 / 51,437 | 0 / 49,697 |
+| order_items | Invalid product_id FK | 514 / 51,437 | 0 / 49,697 |
+| payments | Duplicate payment_id | 200 / 20,200 | 0 / 19,601 |
+| payments | Invalid payment_amount | 202 / 20,200 | 0 / 19,601 |
+| payments | Invalid order_id FK (cascading orphans) | 0 / 20,200 | 0 / 19,601 |
+
 ## 9. Star Schema
 
 `fact_sales` at order-item grain, joined to `dim_customer`, `dim_product`, `dim_store`, and a generated `dim_date` calendar dimension — built in [`databricks/04_gold_model.py`](databricks/04_gold_model.py). Metric definitions (gross/net sales, profit, margin) are documented at the top of that notebook and in [`docs/data_dictionary.md`](docs/data_dictionary.md#gold-layer-tables). `fact_sales` is partitioned by `year`/`month` for partition pruning on date-range queries.
+
+**Real row counts from the run:** `dim_customer` 2,000 · `dim_product` 495 · `dim_store` 20 · `dim_date` 973 · `fact_sales` 49,697.
 
 ## 10. Fabric Integration
 
@@ -132,15 +155,21 @@ _To be completed in Phase 5._ See [`powerbi/dashboard_documentation.md`](powerbi
 **Customers:** revenue by segment · repeat-customer % · average customer value
 **Operations:** cancellation rate · return rate · payment methods with highest failure rate
 
-Answered via [`sql/business_metrics.sql`](sql/business_metrics.sql) (one query per question, against the Gold star schema) and the Power BI dashboard (Phase 5). Like the notebooks, these queries are written against the Gold schema defined in `04_gold_model.py` but not executed here — no live warehouse to run them against.
+Answered via [`sql/business_metrics.sql`](sql/business_metrics.sql) (one query per question, against the Gold star schema) and the Power BI dashboard (Phase 5). Run and verified against the real `fact_sales` table via the workspace's SQL warehouse — see Key Insights below for actual returned values.
 
 ## 13. Key Insights
 
-_To be completed after the Gold layer is actually run against real data, so insights reflect what the queries return rather than assumptions._
+From the dev-scale run's real `fact_sales` (49,697 rows, synthetic data — figures are illustrative of the pipeline, not real retail figures):
+
+- **Total net revenue: ~$1.487B, total profit: ~$299M, overall margin: 20.1%.**
+- **Revenue by category** is fairly even by design (categories are assigned uniformly at random in the generator): Clothing ($261M) leads, followed by Beauty ($253M), Grocery ($250M), Sports ($231M), Home ($228M), Electronics ($224M), plus ~$40M attributed to `Unknown` — the ~2% of products with an intentionally-injected missing category, still sellable and still contributing revenue, exactly as the Silver design intended (see [Data Engineering Pipeline](#6-data-engineering-pipeline)).
+- The `Unknown`-category revenue is itself a useful data-quality signal a real analyst would flag: ~2.7% of total revenue ($40.48M of $1.487B) is unattributed because the source category was missing, not because Silver dropped those rows.
 
 ## 14. Performance Considerations
 
-[`databricks/05_performance_demo.py`](databricks/05_performance_demo.py) demonstrates, with rationale for each: partition pruning (via `fact_sales`'s `year`/`month` partitioning), broadcast joins for the small dimension tables against the large fact table, caching a DataFrame that's reused for multiple aggregations (and unpersisting it after), keeping aggregations distributed instead of `.collect()`/`.toPandas()` on raw rows, Spark SQL vs. DataFrame API as a readability choice (same execution plan either way), and Delta `OPTIMIZE ... ZORDER BY` to speed up selective filters beyond what partitioning alone covers.
+[`databricks/05_performance_demo.py`](databricks/05_performance_demo.py) demonstrates, with rationale for each: partition pruning (via `fact_sales`'s `year`/`month` partitioning), broadcast joins for the small dimension tables against the large fact table, keeping aggregations distributed instead of `.collect()`/`.toPandas()` on raw rows, Spark SQL vs. DataFrame API as a readability choice (same execution plan either way), and Delta `OPTIMIZE ... ZORDER BY` to speed up selective filters beyond what partitioning alone covers.
+
+One planned technique — caching a DataFrame reused across multiple aggregations — turned out not to be available on this workspace's serverless compute (`.cache()` raises `PERSIST TABLE is not supported on serverless compute`, confirmed by actually running it, not assumed). The notebook documents why (serverless is stateless/ephemeral compute with an automatic disk cache instead of user-controlled executor memory) and shows the classic-cluster equivalent as a comment — a genuine, interview-relevant distinction between serverless and classic Databricks compute rather than a technique silently dropped.
 
 ## 15. How to Run
 
@@ -162,12 +191,30 @@ Output lands in `data/raw/` (gitignored — regenerate rather than commit): `cus
 
 ### Run the Databricks pipeline
 
-_Not yet executed in this session — no Databricks workspace available here. Steps to run it yourself:_
+**Actually deployed and run this way, via the Databricks CLI, against a Databricks Free Edition workspace** (not just documented — see the exact commands below):
 
-1. Upload `data/raw/*` to a Unity Catalog volume (default expected path: `/Volumes/retail_project/landing/raw`).
-2. Import the five files in [`databricks/`](databricks/) into a Databricks workspace (File → Import; they're in the standard exported-notebook format) as a Workflow, or run them individually in order.
-3. Run `01_bronze_ingestion.py` → `02_silver_transformation.py` → `03_data_quality.py` → `04_gold_model.py` → `05_performance_demo.py`. All accept `catalog`/`schema` widgets (default `retail_project.main`).
-4. Optionally run [`sql/business_metrics.sql`](sql/business_metrics.sql) and [`sql/data_quality.sql`](sql/data_quality.sql) directly in a Databricks SQL editor against the resulting tables.
+```bash
+# one-time setup, after `databricks auth login` / setting DATABRICKS_HOST + DATABRICKS_TOKEN
+databricks schemas create retail_project workspace
+databricks volumes create workspace retail_project raw_landing MANAGED
+
+# upload the generated raw files
+for f in customers.csv products.csv stores.csv orders.parquet order_items.parquet payments.parquet; do
+  databricks fs cp "data/raw/$f" "dbfs:/Volumes/workspace/retail_project/raw_landing/$f" --overwrite
+done
+
+# import the 5 notebooks (repeat --file per notebook)
+databricks workspace import "/Workspace/Users/<you>/retail-data-engineering/01_bronze_ingestion" \
+  --file "databricks/01_bronze_ingestion.py" --language PYTHON --format SOURCE --overwrite
+
+# create a job chaining all 5 with depends_on, then run it
+databricks jobs create --json @job_spec.json
+databricks jobs run-now <job_id>
+```
+
+The notebooks default to `catalog=workspace`, `schema=retail_project`, `raw_path=/Volumes/workspace/retail_project/raw_landing` — Free Edition doesn't support creating a brand-new catalog without a manually configured storage location, so the existing `workspace` catalog (default storage already set up) is used with a dedicated schema instead. All defaults are overridable via job/notebook widgets.
+
+Optionally run [`sql/business_metrics.sql`](sql/business_metrics.sql) and [`sql/data_quality.sql`](sql/data_quality.sql) directly against the resulting tables via a SQL warehouse (a Free Edition workspace includes one serverless warehouse by default).
 
 ## 16. Future Improvements
 
