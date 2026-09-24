@@ -2,7 +2,7 @@
 
 An end-to-end portfolio project: synthetic retail data → Databricks (PySpark + Delta Lake, Medallion Architecture) → Microsoft Fabric Lakehouse → Power BI dashboard.
 
-> **Status:** All 6 phases complete. Scaffolding, the data generator, the Databricks Bronze/Silver/Gold/data-quality/performance pipeline, the Fabric Lakehouse handoff, and the Power BI semantic model were all **actually deployed and run against real (free-tier) Databricks and Fabric accounts** via their CLIs and browser UI — not just written and assumed to work. Four real bugs were found and fixed in the process (three in Databricks, one schema gap in the semantic model), documented where they happened rather than smoothed over. The one deliberate exception: the Power BI report *pages* are specified in detail rather than built, since Power BI Desktop is Windows-only and automating a web-based report canvas wasn't worth the brittleness for what it would prove — see [Power BI Dashboard](#11-power-bi-dashboard).
+> **Status:** All 6 phases complete. Scaffolding, the data generator, the Databricks Bronze/Silver/Gold/data-quality/performance pipeline, the Fabric Lakehouse handoff, and the Power BI semantic model were all **actually deployed and run against real (free-tier) Databricks and Fabric accounts** via their CLIs and browser UI — not just written and assumed to work. Four real bugs were found and fixed in the process (three in Databricks, one schema gap in the semantic model), documented where they happened rather than smoothed over. A 4-page Power BI report was also built in Fabric, as a working first version rather than a polished dashboard — see [Power BI Dashboard](#11-power-bi-dashboard) for exactly what is and isn't in it.
 
 ## 1. Project Overview
 
@@ -145,7 +145,7 @@ Bronze (raw + ingestion metadata) → Silver (cleaned, typed, deduplicated, FK-v
 
 ## 11. Power BI Dashboard
 
-**Semantic model live-built and verified** (Power BI Desktop is Windows-only, so this was done in Fabric's browser-based Power BI experience, driven directly rather than just described): a Direct Lake semantic model (`retail_sales_model`) over the 5 Gold tables, with all 4 star-schema relationships and 6 DAX measures created and confirmed correct via a live DAX query — `Total Sales` and `Total Profit` match the Databricks-side figures exactly. The 4 report pages are specified in detail (exact visuals and fields per page) rather than built, since automating a web-based drag/drop report canvas is far more brittle and time-consuming than the model work for what it proves. Full details, DAX, and the report spec: [`powerbi/dashboard_documentation.md`](powerbi/dashboard_documentation.md).
+**Semantic model live-built and verified** (Power BI Desktop is Windows-only, so this was done in Fabric's browser-based Power BI experience, driven directly rather than just described): a Direct Lake semantic model (`retail_sales_model`) over the 5 Gold tables, with all 4 star-schema relationships and 6 DAX measures created and confirmed correct via a live DAX query — `Total Sales` and `Total Profit` match the Databricks-side figures exactly. A 4-page report (`Retail Sales Dashboard`) was then built on top of it in the same workspace: Executive Overview, Sales Analysis, Product Analysis and Customer Analysis, each with real visuals. It is a functional first version with default layouts; some visuals from the original spec (Top-N product lists, channel and order-status views) are not built. Full details, DAX, and the report spec: [`powerbi/dashboard_documentation.md`](powerbi/dashboard_documentation.md).
 
 ## 12. Business Questions
 
@@ -224,7 +224,7 @@ If this became a production pipeline: orchestration (e.g. Databricks Workflows o
 Two concrete, scoped gaps found while building this, left as documented next steps rather than fixed under time pressure:
 - `order_status`/`order_channel` aren't in the Gold `fact_sales` table, so `Return Rate`, `Cancellation Rate`, and `Revenue by Channel` can't be computed from the current semantic model — see [`powerbi/dashboard_documentation.md`](powerbi/dashboard_documentation.md#measures-specified-but-not-built-real-gap-not-an-oversight).
 - `dim_date` isn't yet marked as the semantic model's official Date Table, which DAX time-intelligence functions (`YoY`, `MoM`) require.
-- The Power BI report pages are specified but not built (see [Power BI Dashboard](#11-power-bi-dashboard)) — building them is ~15-20 minutes of manual work in the Fabric portal following the spec.
+- The Power BI report is a first version: layout polish, Top-N product filters and a repeat-vs-new split are not done (see [Power BI Dashboard](#11-power-bi-dashboard)).
 
 ## Repository Structure
 
